@@ -176,7 +176,7 @@ fs.writeFileSync(path.join(cliDir, 'index.html'), indexHtml);
 console.log('Created index.html');
 
 // Install dependencies and start
-run('npm install', { cwd: cliDir });
+run('npm install express ws node-pty', { cwd: cliDir });
 run('npm install -g pm2');
 run(`pm2 start ${path.join(cliDir, 'server.js')} --name cli-terminal`);
 run('pm2 save');
@@ -184,3 +184,4 @@ run('pm2 save');
 console.log(`\nDone! CLI terminal running on port 4000`);
 console.log(`Password: AxelCLI2026!`);
 console.log(`\nRun 'pm2 startup' and execute the output command to start on reboot.`);
+
