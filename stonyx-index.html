@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stonyx CLI</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0d14; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+
+  /* Login */
+  #login { display: flex; align-items: center; justify-content: center; height: 100vh; }
+  .login-box { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px; padding: 2.5rem; width: 360px; text-align: center; }
+  .login-box h1 { font-size: 1.5rem; margin-bottom: 0.25rem; color: #fff; }
+  .login-box p { font-size: 0.85rem; color: #888; margin-bottom: 1.5rem; }
+  .login-box input { width: 100%; padding: 0.75rem 1rem; background: #0d0d14; border: 1px solid #2a2a4a; border-radius: 8px; color: #fff; font-size: 0.95rem; margin-bottom: 1rem; outline: none; }
+  .login-box input:focus { border-color: #5b8af5; }
+  .login-box button { width: 100%; padding: 0.75rem; background: #5b8af5; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+  .login-box button:hover { background: #4070e0; }
+  #login-error { color: #ff6b6b; font-size: 0.85rem; margin-top: 0.75rem; min-height: 1em; }
+
+  /* App */
+  #app { display: none; flex-direction: column; height: 100vh; }
+  .topbar { background: #1a1a2e; border-bottom: 1px solid #2a2a4a; padding: 0.6rem 1rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .topbar-title { font-weight: 700; font-size: 0.95rem; color: #5b8af5; margin-right: 0.5rem; }
+  .topbar-title span { color: #888; font-weight: 400; font-size: 0.8rem; margin-left: 0.4rem; }
+  .quick-btn { padding: 0.35rem 0.85rem; border-radius: 6px; border: 1px solid #2a2a4a; background: #0d0d14; color: #ccc; font-size: 0.78rem; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .quick-btn:hover { background: #1e1e38; border-color: #5b8af5; color: #fff; }
+  .quick-btn.danger { border-color: #ff4444; color: #ff8888; }
+  .quick-btn.danger:hover { background: #2a1010; border-color: #ff6666; color: #ffaaaa; }
+  .quick-btn.success { border-color: #44bb66; color: #88ddaa; }
+  .quick-btn.success:hover { background: #0d2018; border-color: #66cc88; }
+  .terminal-wrap { flex: 1; padding: 0.5rem; overflow: hidden; }
+  #terminal { height: 100%; }
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="login">
+  <div class="login-box">
+    <h1>âš™ï¸ Stonyx CLI</h1>
+    <p>Remote terminal access</p>
+    <input type="password" id="pw" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()" autofocus />
+    <button onclick="doLogin()">Connect</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- Terminal App -->
+<div id="app">
+  <div class="topbar">
+    <span class="topbar-title">âš™ï¸ Stonyx CLI <span>stonyx-cli.batmanbluestone.com</span></span>
+
+    <!-- OpenClaw -->
+    <button class="quick-btn success" onclick="run('openclaw gateway restart')">ðŸ”„ Restart Gateway</button>
+    <button class="quick-btn" onclick="run('openclaw gateway status')">ðŸ“¡ Gateway Status</button>
+    <button class="quick-btn" onclick="run('openclaw gateway stop')">â¹ Stop Gateway</button>
+    <button class="quick-btn" onclick="run('openclaw gateway start')">â–¶ Start Gateway</button>
+
+    <!-- Mission Control -->
+    <button class="quick-btn success" onclick="run('pm2 restart mission-control')">ðŸŽ› Restart MC</button>
+    <button class="quick-btn" onclick="run('pm2 status')">ðŸ“‹ PM2 Status</button>
+
+    <!-- Tunnel -->
+    <button class="quick-btn success" onclick="run('pm2 restart cf-tunnel')">ðŸŒ Restart Tunnel</button>
+    <button class="quick-btn" onclick="run('pm2 logs --lines 20 --nostream')">ðŸ“œ PM2 Logs</button>
+
+    <!-- System -->
+    <button class="quick-btn danger" onclick="if(confirm('Restart all PM2 processes?'))run('pm2 restart all')">âš ï¸ Restart All</button>
+  </div>
+  <div class="terminal-wrap">
+    <div id="terminal"></div>
+  </div>
+</div>
+
+<script>
+let ws, term, fitAddon, authToken;
+
+async function doLogin() {
+  const pw = document.getElementById('pw').value;
+  const err = document.getElementById('login-error');
+  err.textContent = '';
+  try {
+    const res = await fetch('/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      authToken = data.token;
+      startTerminal();
+    } else {
+      err.textContent = 'Wrong password. Try again.';
+    }
+  } catch(e) {
+    err.textContent = 'Connection error.';
+  }
+}
+
+function startTerminal() {
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+
+  term = new Terminal({
+    theme: { background: '#0d0d14', foreground: '#e0e0e0', cursor: '#5b8af5', selectionBackground: '#2a3a6a' },
+    fontFamily: 'Consolas, "Courier New", monospace',
+    fontSize: 14,
+    cursorBlink: true,
+    scrollback: 1000,
+  });
+  fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(document.getElementById('terminal'));
+  fitAddon.fit();
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/?token=${authToken}`);
+
+  ws.onopen = () => term.writeln('\x1b[32mConnected to Stonyx CLI âš™ï¸\x1b[0m\r\n');
+  ws.onmessage = e => term.write(e.data);
+  ws.onclose = () => term.writeln('\r\n\x1b[31mConnection closed.\x1b[0m');
+
+  term.onData(data => ws.send(JSON.stringify({ type: 'input', data })));
+  term.onResize(({ cols, rows }) => ws.send(JSON.stringify({ type: 'resize', cols, rows })));
+
+  window.addEventListener('resize', () => fitAddon.fit());
+}
+
+function run(cmd) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'input', data: cmd + '\r' }));
+  term.focus();
+}
+</script>
+</body>
+</html>
